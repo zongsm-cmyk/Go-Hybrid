@@ -243,6 +243,20 @@ def run_author(issue_no: int, out: pathlib.Path, max_rounds: int,
     expected = exp.group(0) if exp else ""
     tr(trace, "repro", chars=len(repro_src), expected=expected or None)
 
+    # Every advertised tripwire must be available before spending a brain
+    # round or applying a patch. Read HEAD once, so patch contents cannot
+    # remove or rewrite the controls whose results the bundle claims.
+    accept_controls = []
+    for cpath in ACCEPT_CONTROLS:
+        gs = sh(["git", "show", f"HEAD:{cpath}"], timeout=60)
+        if gs.returncode != 0 or not gs.stdout:
+            return write_blocked(
+                issue_no, trace,
+                f"accept control {cpath} unavailable from HEAD "
+                f"(git exit {gs.returncode}; empty={not bool(gs.stdout)})",
+            )
+        accept_controls.append((cpath, gs.stdout))
+
     REPRO_DIR.mkdir(parents=True, exist_ok=True)
     repro = REPRO_DIR / "repro.hy"
     repro.write_text(repro_src)
@@ -322,12 +336,9 @@ def run_author(issue_no: int, out: pathlib.Path, max_rounds: int,
             continue
         tr(trace, "gate-repro-ok", round=rnd, exit=code, expected=expected or "(any)")
         controls_ok = True
-        for cpath in ACCEPT_CONTROLS:
-            gs = sh(["git", "show", f"HEAD:{cpath}"], timeout=60)
-            if gs.returncode != 0 or not gs.stdout:
-                continue
+        for cpath, control_src in accept_controls:
             tmpc = REPRO_DIR / ("control-" + pathlib.Path(cpath).name)
-            tmpc.write_text(gs.stdout)
+            tmpc.write_text(control_src)
             cc, _ = hyb_check(str(tmpc.relative_to(ROOT)))
             if cc != 0:
                 feedback = (f"OVER-REACH: accept control {cpath} now rejects "
