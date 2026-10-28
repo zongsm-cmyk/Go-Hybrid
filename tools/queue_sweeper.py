@@ -85,6 +85,10 @@ def main():
     ap.add_argument("--max", type=int, default=200)
     ap.add_argument("--min-age", type=int, default=MIN_AGE)
     args = ap.parse_args()
+    # Fail closed: a negative slice cap selects almost every due PR, and a
+    # negative age makes fresh PRs eligible for destructive close requests.
+    if args.max < 0 or args.min_age < 0:
+        ap.error("--max and --min-age must be non-negative")
     if not TOK:
         print("GITHUB_TOKEN not set"); sys.exit(1)
 
